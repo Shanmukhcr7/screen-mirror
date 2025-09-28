@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Phone Screen Viewer</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+</head>
+<body>
+  <h2>📱 Remote Phone Screen Viewer</h2>
+  <video id="remoteVideo" autoplay playsinline style="width:100%;max-height:90vh;border:1px solid #ccc;"></video>
+
+  <script>
+    // ✅ Your Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyB8QyVaRw7yBN90ly-A0CsFEfWBZdQggmA",
+      authDomain: "movie-review-b1c1b.firebaseapp.com",
+      projectId: "movie-review-b1c1b",
+      storageBucket: "movie-review-b1c1b.firebasestorage.app",
+      messagingSenderId: "148113147743",
+      appId: "1:148113147743:web:c6c6db0bafa5a23596d8ea",
+      measurementId: "G-JKRS686GBL"
+    };
+
+    // 🔹 Init Firebase
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // 🔹 Create WebRTC peer (dashboard = viewer, not initiator)
+    const peer = new SimplePeer({ initiator: false, trickle: false });
+
+    // When stream arrives → show in video
+    peer.on('stream', stream => {
+      document.getElementById('remoteVideo').srcObject = stream;
+    });
+
+    async function init() {
+      const callDoc = db.collection('calls').doc('current');
+      const offerCandidates = callDoc.collection('offerCandidates');
+      const answerCandidates = callDoc.collection('answerCandidates');
+
+      // Listen for offer from Android sender
+      callDoc.onSnapshot(snapshot => {
+        const data = snapshot.data();
+        if (data?.offer) {
+          peer.signal(data.offer);
+        }
+      });
+
+      // Send answer back to Firestore
+      peer.on('signal', async data => {
+        await callDoc.update({ answer: data });
+      });
+
+      // (Optional) Listen for ICE candidates
+      offerCandidates.onSnapshot(snapshot => {
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            let candidate = change.doc.data();
+            peer.signal({ candidate });
+          }
+        });
+      });
+
+      // Add our ICE candidates
+      peer.on('icecandidate', event => {
+        if (event.candidate) {
+          answerCandidates.add(event.candidate.toJSON());
+        }
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
